@@ -4,29 +4,25 @@ import { mockStudents, mockClassrooms, mockInvitations, mockEvaluations, mockTea
 import { readFromGist, writeToGist, isGistConfigured, getGistConfig, saveGistConfig } from '../utils/gistService'
 
 export const useAppStore = defineStore('app', () => {
-  // 云同步状态
   const isCloudSyncing = ref(false)
   const lastSyncTime = ref(localStorage.getItem('lastSyncTime') || '')
-
-  // 当前用户
   const currentUser = ref(JSON.parse(localStorage.getItem('currentUser') || 'null'))
-
-  // 所有学生
   const students = ref([...mockStudents])
-
-  // 课堂列表
   const classrooms = ref([...mockClassrooms])
-
-  // 邀请列表
   const invitations = ref([...mockInvitations])
-
-  // 评价列表
   const evaluations = ref([...mockEvaluations])
-
-  // 队伍列表
   const teams = ref([...mockTeams])
 
-  // 从本地存储加载数据
+  function toJSON() {
+    return {
+      students: JSON.parse(JSON.stringify(students.value)),
+      classrooms: JSON.parse(JSON.stringify(classrooms.value)),
+      invitations: JSON.parse(JSON.stringify(invitations.value)),
+      evaluations: JSON.parse(JSON.stringify(evaluations.value)),
+      teams: JSON.parse(JSON.stringify(teams.value)),
+    }
+  }
+
   function loadFromLocal() {
     const savedData = localStorage.getItem('appData')
     if (savedData) {
@@ -37,30 +33,16 @@ export const useAppStore = defineStore('app', () => {
         if (data.invitations) invitations.value = data.invitations
         if (data.evaluations) evaluations.value = data.evaluations
         if (data.teams) teams.value = data.teams
-      } catch (e) {
-        console.error('加载本地数据失败:', e)
-      }
+      } catch (e) { console.error('加载本地数据失败:', e) }
     }
   }
 
-  // 保存到本地存储
   function saveToLocal() {
-    const data = {
-      students: students.value,
-      classrooms: classrooms.value,
-      invitations: invitations.value,
-      evaluations: evaluations.value,
-      teams: teams.value,
-    }
-    localStorage.setItem('appData', JSON.stringify(data))
+    localStorage.setItem('appData', JSON.stringify(toJSON()))
   }
 
-  // 从云端同步数据
   async function syncFromCloud() {
-    if (!isGistConfigured()) {
-      return { success: false, message: '未配置云端存储' }
-    }
-
+    if (!isGistConfigured()) return { success: false, message: '未配置云端存储' }
     isCloudSyncing.value = true
     try {
       const result = await readFromGist()
@@ -71,70 +53,48 @@ export const useAppStore = defineStore('app', () => {
         if (result.data.evaluations) evaluations.value = result.data.evaluations
         if (result.data.teams) teams.value = result.data.teams
         saveToLocal()
+        if (currentUser.value) {
+          const updatedUser = students.value.find(s => s.id === currentUser.value.id)
+          if (updatedUser) {
+            currentUser.value = updatedUser
+            localStorage.setItem('currentUser', JSON.stringify(updatedUser))
+          }
+        }
         lastSyncTime.value = new Date().toLocaleString('zh-CN')
         localStorage.setItem('lastSyncTime', lastSyncTime.value)
         return { success: true, message: '数据已从云端同步' }
       }
       return result
-    } finally {
-      isCloudSyncing.value = false
-    }
+    } finally { isCloudSyncing.value = false }
   }
 
-  // 同步数据到云端
   async function syncToCloud() {
-    if (!isGistConfigured()) {
-      return { success: false, message: '未配置云端存储' }
-    }
-
+    if (!isGistConfigured()) return { success: false, message: '未配置云端存储' }
     isCloudSyncing.value = true
     try {
-      const data = {
-        students: students.value,
-        classrooms: classrooms.value,
-        invitations: invitations.value,
-        evaluations: evaluations.value,
-        teams: teams.value,
-        updatedAt: new Date().toISOString()
-      }
+      const data = { ...toJSON(), updatedAt: new Date().toISOString() }
       const result = await writeToGist(data)
       if (result.success) {
         lastSyncTime.value = new Date().toLocaleString('zh-CN')
         localStorage.setItem('lastSyncTime', lastSyncTime.value)
-        saveToLocal()
       }
       return result
-    } finally {
-      isCloudSyncing.value = false
-    }
+    } finally { isCloudSyncing.value = false }
   }
 
-  // 初始化：优先从云端加载，失败则从本地加载
   async function initialize() {
     loadFromLocal()
-    if (isGistConfigured()) {
-      await syncFromCloud()
-    }
+    if (isGistConfigured()) await syncFromCloud()
   }
 
-  // 登录（任意学号都可以登录，不存在的学号自动创建新用户）
   function login(studentId, password) {
     let student = students.value.find(s => s.studentId === studentId)
     if (!student) {
-      // 自动创建新用户
       const newStudent = {
-        id: students.value.length + 1,
-        name: `用户${studentId.slice(-4)}`,
-        studentId: studentId,
-        major: '计算机科学与技术',
-        grade: '大二',
-        skills: ['前端开发', '后端开发'],
-        personality: 'learner',
-        goals: ['完成课程项目', '学习新技术'],
-        avatar: '',
-        bio: '热爱编程，期待与优秀的队友合作',
-        availableTime: '灵活安排',
-        score: 80,
+        id: students.value.length + 1, name: `用户${studentId.slice(-4)}`, studentId,
+        major: '计算机科学与技术', grade: '大二', skills: ['前端开发', '后端开发'],
+        personality: 'learner', goals: ['完成课程项目', '学习新技术'],
+        avatar: '', bio: '热爱编程，期待与优秀的队友合作', availableTime: '灵活安排', score: 80,
       }
       students.value.push(newStudent)
       student = newStudent
@@ -145,18 +105,10 @@ export const useAppStore = defineStore('app', () => {
     return { success: true, message: '登录成功' }
   }
 
-  // 注册
   function register(userData) {
     const exists = students.value.find(s => s.studentId === userData.studentId)
-    if (exists) {
-      return { success: false, message: '该学号已注册' }
-    }
-    const newStudent = {
-      id: students.value.length + 1,
-      ...userData,
-      avatar: '',
-      score: 80,
-    }
+    if (exists) return { success: false, message: '该学号已注册' }
+    const newStudent = { id: students.value.length + 1, ...userData, avatar: '', score: 80 }
     students.value.push(newStudent)
     currentUser.value = newStudent
     localStorage.setItem('currentUser', JSON.stringify(newStudent))
@@ -164,7 +116,6 @@ export const useAppStore = defineStore('app', () => {
     return { success: true, message: '注册成功' }
   }
 
-  // 更新个人信息
   function updateProfile(data) {
     if (!currentUser.value) return
     const idx = students.value.findIndex(s => s.id === currentUser.value.id)
@@ -176,100 +127,52 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // 登出
-  function logout() {
-    currentUser.value = null
-    localStorage.removeItem('currentUser')
-  }
+  function logout() { currentUser.value = null; localStorage.removeItem('currentUser') }
 
-  // 发送邀请
   function sendInvitation(toId, classroomId, message) {
-    const newInvitation = {
-      id: invitations.value.length + 1,
-      from: currentUser.value.id,
-      to: toId,
-      classroomId,
-      message,
-      status: 'pending',
-      createdAt: new Date().toLocaleString('zh-CN'),
-    }
-    invitations.value.push(newInvitation)
+    invitations.value.push({ id: invitations.value.length + 1, from: currentUser.value.id, to: toId, classroomId, message, status: 'pending', createdAt: new Date().toLocaleString('zh-CN') })
     saveToLocal()
     return { success: true, message: '邀请已发送' }
   }
 
-  // 处理邀请
   function handleInvitation(invitationId, accept) {
     const idx = invitations.value.findIndex(i => i.id === invitationId)
-    if (idx !== -1) {
-      invitations.value[idx].status = accept ? 'accepted' : 'rejected'
-      saveToLocal()
-    }
+    if (idx !== -1) { invitations.value[idx].status = accept ? 'accepted' : 'rejected'; saveToLocal() }
   }
 
-  // 提交评价
   function submitEvaluation(data) {
-    const newEval = {
-      id: evaluations.value.length + 1,
-      from: currentUser.value.id,
-      ...data,
-      createdAt: new Date().toLocaleDateString('zh-CN'),
-    }
-    evaluations.value.push(newEval)
+    evaluations.value.push({ id: evaluations.value.length + 1, from: currentUser.value.id, ...data, createdAt: new Date().toLocaleDateString('zh-CN') })
     saveToLocal()
     return { success: true, message: '评价已提交' }
   }
 
-  // 创建课堂
   function createClassroom(data) {
-    const newClassroom = {
-      id: classrooms.value.length + 1,
-      ...data,
-      students: [currentUser.value.id],
-      status: 'active',
-    }
-    classrooms.value.push(newClassroom)
+    classrooms.value.push({ id: classrooms.value.length + 1, ...data, students: [currentUser.value.id], status: 'active' })
     saveToLocal()
     return { success: true, message: '课堂创建成功' }
   }
 
-  // 获取当前用户的邀请
   const myInvitations = computed(() => {
     if (!currentUser.value) return []
-    return invitations.value.filter(
-      i => i.to === currentUser.value.id || i.from === currentUser.value.id
-    )
+    return invitations.value.filter(i => i.to === currentUser.value.id || i.from === currentUser.value.id)
   })
 
-  // 获取当前用户的评价
   const myEvaluations = computed(() => {
     if (!currentUser.value) return []
-    return evaluations.value.filter(
-      e => e.to === currentUser.value.id || e.from === currentUser.value.id
-    )
+    return evaluations.value.filter(e => e.to === currentUser.value.id || e.from === currentUser.value.id)
   })
 
-  // 获取学生平均评分
   function getStudentRating(studentId) {
     const evals = evaluations.value.filter(e => e.to === studentId)
-    if (evals.length === 0) return 0 // 返回0而不是null，避免显示问题
-    const avg = evals.reduce((sum, e) => {
-      const teamwork = e.teamwork || 0
-      const communication = e.communication || 0
-      const technical = e.technical || 0
-      const responsibility = e.responsibility || 0
-      return sum + (teamwork + communication + technical + responsibility) / 4
-    }, 0) / evals.length
+    if (evals.length === 0) return 0
+    const avg = evals.reduce((sum, e) => sum + ((e.teamwork||0)+(e.communication||0)+(e.technical||0)+(e.responsibility||0)) / 4, 0) / evals.length
     return Math.round(avg * 10) / 10 || 0
   }
 
   return {
-    currentUser, students, classrooms, invitations, evaluations, teams,
-    isCloudSyncing, lastSyncTime,
-    login, register, updateProfile, logout,
-    sendInvitation, handleInvitation, submitEvaluation, createClassroom,
+    currentUser, students, classrooms, invitations, evaluations, teams, isCloudSyncing, lastSyncTime,
+    login, register, updateProfile, logout, sendInvitation, handleInvitation, submitEvaluation, createClassroom,
     myInvitations, myEvaluations, getStudentRating,
-    initialize, syncFromCloud, syncToCloud, saveToLocal, loadFromLocal,
-    isGistConfigured, getGistConfig, saveGistConfig,
+    initialize, syncFromCloud, syncToCloud, saveToLocal, loadFromLocal, isGistConfigured, getGistConfig, saveGistConfig,
   }
 })
