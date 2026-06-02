@@ -133,54 +133,7 @@
           </el-form>
         </el-card>
 
-        <!-- 一键组队 -->
-        <el-card shadow="hover" style="margin-top: 20px">
-          <template #header>
-            <div class="card-header">
-              <span><el-icon><UserFilled /></el-icon> 一键组队</span>
-            </div>
-          </template>
 
-          <el-form label-position="top">
-            <el-form-item label="每队人数">
-              <el-input-number v-model="autoTeamSize" :min="2" :max="6" style="width: 100%" />
-            </el-form-item>
-
-            <el-form-item>
-              <el-button type="success" style="width: 100%" @click="startAutoTeam">
-                <el-icon><MagicStick /></el-icon> 自动分组
-              </el-button>
-            </el-form-item>
-          </el-form>
-
-          <!-- 自动分组结果 -->
-          <div v-if="autoTeamResults.length > 0" style="margin-top: 20px">
-            <el-divider>分组结果</el-divider>
-            <el-card
-              v-for="(team, index) in autoTeamResults"
-              :key="index"
-              shadow="never"
-              class="team-card"
-            >
-              <template #header>
-                <div class="team-header">
-                  <span>队伍 {{ index + 1 }}</span>
-                  <el-tag type="success">平均适配度: {{ team.avgScore }}分</el-tag>
-                </div>
-              </template>
-              <div class="team-members">
-                <el-tag
-                  v-for="member in team.members"
-                  :key="member.id"
-                  size="small"
-                  class="member-tag"
-                >
-                  {{ member.name }}
-                </el-tag>
-              </div>
-            </el-card>
-          </div>
-        </el-card>
       </el-col>
     </el-row>
 
@@ -264,7 +217,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useAppStore } from '../store'
-import { findBestMatches, autoTeamFormation } from '../utils/matching'
+import { findBestMatches } from '../utils/matching'
 import { skillOptions, personalityOptions } from '../data/mockData'
 import { ElMessage } from 'element-plus'
 
@@ -279,10 +232,6 @@ const filter = reactive({
 
 // 匹配结果
 const matchResults = ref([])
-
-// 一键组队
-const autoTeamSize = ref(4)
-const autoTeamResults = ref([])
 
 // 邀请对话框
 const inviteDialogVisible = ref(false)
@@ -307,33 +256,45 @@ function refreshMatches() {
   if (!store.currentUser) return
 
   const otherStudents = store.students.filter(s => s.id !== store.currentUser.id)
-  const results = findBestMatches(store.currentUser, otherStudents, 5)
+  const results = findBestMatches(store.currentUser, otherStudents, 20)
 
-  // 应用筛选
-  matchResults.value = results.filter(result => {
+  // 应用筛选（改为加权放大而非强制筛选）
+  matchResults.value = results.map(result => {
     const student = result.student
+    let bonusScore = 0
+    let hasFilter = false
 
-    // 课堂筛选
+    // 课堂筛选：同课堂加分，非同课堂不扣分
     if (filter.classroomId) {
+      hasFilter = true
       const classroom = store.classrooms.find(c => c.id === filter.classroomId)
-      if (!classroom || !classroom.students.includes(student.id)) {
-        return false
+      if (classroom && classroom.students.includes(student.id)) {
+        bonusScore += 15 // 同课堂加分
       }
     }
 
-    // 技能筛选
+    // 技能筛选：有期望技能加分
     if (filter.skills.length > 0) {
-      const hasSkill = filter.skills.some(skill => student.skills?.includes(skill))
-      if (!hasSkill) return false
+      hasFilter = true
+      const matchedSkills = filter.skills.filter(skill => student.skills?.includes(skill))
+      bonusScore += matchedSkills.length * 8 // 每个匹配技能加8分
     }
 
-    // 性格筛选
-    if (filter.personality && student.personality !== filter.personality) {
-      return false
+    // 性格筛选：匹配性格加分
+    if (filter.personality) {
+      hasFilter = true
+      if (student.personality === filter.personality) {
+        bonusScore += 12 // 性格匹配加分
+      }
     }
 
-    return true
-  })
+    // 应用加分（最高不超过100）
+    if (hasFilter) {
+      result.score.total = Math.min(100, result.score.total + bonusScore)
+    }
+
+    return result
+  }).sort((a, b) => b.score.total - a.score.total).slice(0, 5) // 重新排序并取前5
 }
 
 // 应用筛选
@@ -351,37 +312,7 @@ function resetFilter() {
   ElMessage.success('筛选已重置')
 }
 
-// 一键组队
-function startAutoTeam() {
-  if (!store.currentUser) {
-    ElMessage.warning('请先登录')
-    return
-  }
 
-  if (!filter.classroomId) {
-    ElMessage.warning('请先选择目标课堂')
-    return
-  }
-
-  const classroomStudents = store.students.filter(s => {
-    const classroom = store.classrooms.find(c => c.id === filter.classroomId)
-    return classroom?.students.includes(s.id)
-  })
-
-  if (classroomStudents.length < 2) {
-    ElMessage.warning('课堂学生数量不足，无法分组')
-    return
-  }
-
-  // 传递班级ID和已有队伍信息，以便筛选未组队学生并处理剩余学生
-  autoTeamResults.value = autoTeamFormation(
-    classroomStudents,
-    autoTeamSize.value,
-    filter.classroomId,
-    store.teams
-  )
-  ElMessage.success('自动分组完成')
-}
 
 // 邀请学生
 function inviteStudent(student) {
@@ -522,30 +453,6 @@ function getScoreColor(score) {
   display: flex;
   gap: 10px;
   margin-top: 15px;
-}
-
-.team-card {
-  margin-bottom: 10px;
-}
-
-.team-card:last-child {
-  margin-bottom: 0;
-}
-
-.team-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.team-members {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.member-tag {
-  margin: 0;
 }
 
 .profile-detail {
