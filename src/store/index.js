@@ -1,7 +1,20 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { mockStudents, mockClassrooms, mockInvitations, mockEvaluations, mockTeams } from '../data/mockData'
-import { readFromGist, writeToGist, isGistConfigured, hasWritePermission, saveAdminToken, getAdminToken } from '../utils/gistService'
+import { 
+  syncAllData, 
+  createStudent, 
+  updateStudent,
+  createClassroom,
+  createInvitation,
+  updateInvitation,
+  createEvaluation,
+  createTeam,
+  isSupabaseConfigured,
+  verifyAdmin,
+  isAdminVerified,
+  clearAdminSession
+} from '../utils/supabaseService'
 
 export const useAppStore = defineStore('app', () => {
   // 状态
@@ -9,6 +22,7 @@ export const useAppStore = defineStore('app', () => {
   const isInitialized = ref(false)
   const lastSyncTime = ref(localStorage.getItem('lastSyncTime') || '')
   const currentUser = ref(JSON.parse(localStorage.getItem('currentUser') || 'null'))
+  let syncTimer = null
 
   // 数据
   const students = ref([...mockStudents])
@@ -17,7 +31,8 @@ export const useAppStore = defineStore('app', () => {
   const evaluations = ref([...mockEvaluations])
   const teams = ref([...mockTeams])
 
-  // 转为纯 JSON
+  // ========== 工具函数 ==========
+
   function toJSON() {
     return {
       students: JSON.parse(JSON.stringify(students.value)),
@@ -28,12 +43,11 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // 从本地加载
   function loadFromLocal() {
-    const savedData = localStorage.getItem('appData')
-    if (savedData) {
+    const saved = localStorage.getItem('appData')
+    if (saved) {
       try {
-        const data = JSON.parse(savedData)
+        const data = JSON.parse(saved)
         if (data.students) students.value = data.students
         if (data.classrooms) classrooms.value = data.classrooms
         if (data.invitations) invitations.value = data.invitations
@@ -43,70 +57,81 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // 保存到本地
   function saveToLocal() {
     localStorage.setItem('appData', JSON.stringify(toJSON()))
   }
 
-  // 从云端拉取
-  async function syncFromCloud() {
-    if (!isGistConfigured()) return { success: false, message: '未配置云端存储' }
+  function updateSyncTime() {
+    const now = new Date().toLocaleString('zh-CN')
+    lastSyncTime.value = now
+    localStorage.setItem('lastSyncTime', now)
+  }
+
+  // ========== 云端同步 ==========
+
+  async function syncFromCloud(silent = false) {
+    if (!isSupabaseConfigured()) return { success: false, message: '未配置 Supabase' }
     isCloudSyncing.value = true
     try {
-      const result = await readFromGist()
+      const result = await syncAllData()
       if (result.success && result.data) {
-        if (result.data.students) students.value = result.data.students
-        if (result.data.classrooms) classrooms.value = result.data.classrooms
-        if (result.data.invitations) invitations.value = result.data.invitations
-        if (result.data.evaluations) evaluations.value = result.data.evaluations
-        if (result.data.teams) teams.value = result.data.teams
+        students.value = result.data.students || []
+        classrooms.value = result.data.classrooms || []
+        invitations.value = result.data.invitations || []
+        evaluations.value = result.data.evaluations || []
+        teams.value = result.data.teams || []
         saveToLocal()
         if (currentUser.value) {
-          const updatedUser = students.value.find(s => s.id === currentUser.value.id)
-          if (updatedUser) {
-            currentUser.value = updatedUser
-            localStorage.setItem('currentUser', JSON.stringify(updatedUser))
+          const updated = students.value.find(s => s.id === currentUser.value.id)
+          if (updated) {
+            currentUser.value = updated
+            localStorage.setItem('currentUser', JSON.stringify(updated))
           }
         }
-        lastSyncTime.value = new Date().toLocaleString('zh-CN')
-        localStorage.setItem('lastSyncTime', lastSyncTime.value)
+        updateSyncTime()
         return { success: true, message: '数据已从云端同步' }
       }
       return result
-    } finally { isCloudSyncing.value = false }
+    } finally {
+      isCloudSyncing.value = false
+    }
   }
 
-  // 推送到云端
-  async function syncToCloud() {
-    if (!isGistConfigured()) return { success: false, message: '未配置云端存储' }
-    if (!hasWritePermission()) return { success: false, message: '未配置管理员 Token，无法写入数据' }
-    isCloudSyncing.value = true
-    try {
-      const data = { ...toJSON(), updatedAt: new Date().toISOString() }
-      const result = await writeToGist(data)
-      if (result.success) {
-        lastSyncTime.value = new Date().toLocaleString('zh-CN')
-        localStorage.setItem('lastSyncTime', lastSyncTime.value)
+  // ========== 定时拉取 ==========
+
+  function startAutoSync(intervalMs = 60000) {
+    stopAutoSync()
+    syncTimer = setInterval(async () => {
+      if (isSupabaseConfigured()) {
+        await syncFromCloud(true)
       }
-      return result
-    } finally { isCloudSyncing.value = false }
+    }, intervalMs)
   }
 
-  // 初始化：从云端加载数据
+  function stopAutoSync() {
+    if (syncTimer) {
+      clearInterval(syncTimer)
+      syncTimer = null
+    }
+  }
+
+  // ========== 初始化 ==========
+
   async function initialize() {
     if (isInitialized.value) return
     loadFromLocal()
-    if (isGistConfigured()) {
-      await syncFromCloud()
+    if (isSupabaseConfigured()) {
+      await syncFromCloud(true)
     }
     isInitialized.value = true
   }
 
-  // 登录验证（需要密码）
+  // ========== 用户操作 ==========
+
   function login(studentId, password) {
     const student = students.value.find(s => s.studentId === studentId)
     if (!student) {
-      return { success: false, message: '该学号未注册' }
+      return { success: false, message: '该学号未注册，请先注册' }
     }
     if (!student.password || student.password !== password) {
       return { success: false, message: '密码错误' }
@@ -116,22 +141,19 @@ export const useAppStore = defineStore('app', () => {
     return { success: true, message: '登录成功' }
   }
 
-  // 注册
   async function register(userData) {
-    if (!hasWritePermission()) {
-      return { success: false, message: '未配置管理员 Token，无法注册新用户' }
-    }
     const exists = students.value.find(s => s.studentId === userData.studentId)
     if (exists) {
       return { success: false, message: '该学号已注册' }
     }
+    
     const newStudent = {
       id: Math.max(0, ...students.value.map(s => s.id)) + 1,
       studentId: userData.studentId,
       name: userData.name,
-      password: userData.password, // 保存密码
-      major: userData.major || '计算机科学与技术',
-      grade: userData.grade || '大二',
+      password: userData.password,
+      major: userData.major || '',
+      grade: userData.grade || '',
       skills: [],
       personality: '',
       goals: [],
@@ -140,19 +162,24 @@ export const useAppStore = defineStore('app', () => {
       availableTime: '',
       score: 80,
     }
-    students.value.push(newStudent)
-    saveToLocal()
     
-    // 同步到云端
-    const syncResult = await syncToCloud()
-    if (!syncResult.success) {
-      return { success: false, message: `注册成功但同步失败: ${syncResult.message}` }
+    // 同步到 Supabase
+    if (isSupabaseConfigured()) {
+      const result = await createStudent(newStudent)
+      if (!result.success) {
+        return { success: false, message: `注册失败: ${result.message}` }
+      }
+      // 使用返回的数据更新 ID
+      if (result.data && result.data[0]) {
+        newStudent.id = result.data[0].id
+      }
     }
     
-    return { success: true, message: '注册成功', student: newStudent }
+    students.value.push(newStudent)
+    saveToLocal()
+    return { success: true, message: '注册成功，请登录' }
   }
 
-  // 更新个人信息
   async function updateProfile(data) {
     if (!currentUser.value) return
     const idx = students.value.findIndex(s => s.id === currentUser.value.id)
@@ -162,20 +189,19 @@ export const useAppStore = defineStore('app', () => {
       localStorage.setItem('currentUser', JSON.stringify(currentUser.value))
       saveToLocal()
       
-      // 同步到云端
-      if (hasWritePermission()) {
-        await syncToCloud()
+      // 同步到 Supabase
+      if (isSupabaseConfigured()) {
+        await updateStudent(currentUser.value.studentId, data)
       }
     }
   }
 
-  // 登出
   function logout() {
+    stopAutoSync()
     currentUser.value = null
     localStorage.removeItem('currentUser')
   }
 
-  // 发送邀请
   async function sendInvitation(toId, classroomId, message) {
     const newInvitation = {
       id: Math.max(0, ...invitations.value.map(i => i.id)) + 1,
@@ -186,23 +212,31 @@ export const useAppStore = defineStore('app', () => {
       status: 'pending',
       createdAt: new Date().toLocaleString('zh-CN'),
     }
+    
+    if (isSupabaseConfigured()) {
+      const result = await createInvitation(newInvitation)
+      if (result.success && result.data && result.data[0]) {
+        newInvitation.id = result.data[0].id
+      }
+    }
+    
     invitations.value.push(newInvitation)
     saveToLocal()
-    if (hasWritePermission()) await syncToCloud()
     return { success: true, message: '邀请已发送' }
   }
 
-  // 处理邀请
   async function handleInvitation(invitationId, accept) {
     const idx = invitations.value.findIndex(i => i.id === invitationId)
     if (idx !== -1) {
       invitations.value[idx].status = accept ? 'accepted' : 'rejected'
       saveToLocal()
-      if (hasWritePermission()) await syncToCloud()
+      
+      if (isSupabaseConfigured()) {
+        await updateInvitation(invitationId, invitations.value[idx].status)
+      }
     }
   }
 
-  // 提交评价
   async function submitEvaluation(data) {
     const newEval = {
       id: Math.max(0, ...evaluations.value.map(e => e.id)) + 1,
@@ -210,71 +244,75 @@ export const useAppStore = defineStore('app', () => {
       ...data,
       createdAt: new Date().toLocaleDateString('zh-CN'),
     }
+    
+    if (isSupabaseConfigured()) {
+      const result = await createEvaluation(newEval)
+      if (result.success && result.data && result.data[0]) {
+        newEval.id = result.data[0].id
+      }
+    }
+    
     evaluations.value.push(newEval)
     saveToLocal()
-    if (hasWritePermission()) await syncToCloud()
     return { success: true, message: '评价已提交' }
   }
 
-  // 创建课堂
-  async function createClassroom(data) {
+  async function createClassroomData(data) {
     const newClassroom = {
       id: Math.max(0, ...classrooms.value.map(c => c.id)) + 1,
       ...data,
       students: [currentUser.value.id],
       status: 'active',
     }
+    
+    if (isSupabaseConfigured()) {
+      const result = await createClassroom(newClassroom)
+      if (result.success && result.data && result.data[0]) {
+        newClassroom.id = result.data[0].id
+      }
+    }
+    
     classrooms.value.push(newClassroom)
     saveToLocal()
-    if (hasWritePermission()) await syncToCloud()
     return { success: true, message: '课堂创建成功' }
   }
 
-  // 获取最近动态
+  // ========== 计算属性 ==========
+
   const recentActivities = computed(() => {
     const activities = []
     const userId = currentUser.value?.id
     if (!userId) return activities
-    
-    // 邀请相关
     invitations.value.filter(i => i.from === userId || i.to === userId).slice(0, 5).forEach(inv => {
       const fromName = students.value.find(s => s.id === inv.from)?.name || '未知'
       const toName = students.value.find(s => s.id === inv.to)?.name || '未知'
       activities.push({
-        type: 'invitation',
         time: inv.createdAt,
         content: inv.from === userId ? `你向 ${toName} 发送了组队邀请` : `${fromName} 向你发送了组队邀请`,
-        status: inv.status
+        status: inv.status,
       })
     })
-    
-    // 评价相关
     evaluations.value.filter(e => e.from === userId || e.to === userId).slice(0, 5).forEach(evl => {
       const fromName = students.value.find(s => s.id === evl.from)?.name || '未知'
       const toName = students.value.find(s => s.id === evl.to)?.name || '未知'
       activities.push({
-        type: 'evaluation',
         time: evl.createdAt,
         content: evl.from === userId ? `你评价了 ${toName}` : `${fromName} 评价了你`,
       })
     })
-    
     return activities.sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 10)
   })
 
-  // 我的邀请
   const myInvitations = computed(() => {
     if (!currentUser.value) return []
     return invitations.value.filter(i => i.to === currentUser.value.id || i.from === currentUser.value.id)
   })
 
-  // 我的评价
   const myEvaluations = computed(() => {
     if (!currentUser.value) return []
     return evaluations.value.filter(e => e.to === currentUser.value.id || e.from === currentUser.value.id)
   })
 
-  // 学生评分
   function getStudentRating(studentId) {
     const evals = evaluations.value.filter(e => e.to === studentId)
     if (evals.length === 0) return 0
@@ -286,9 +324,11 @@ export const useAppStore = defineStore('app', () => {
     currentUser, students, classrooms, invitations, evaluations, teams,
     isCloudSyncing, isInitialized, lastSyncTime, recentActivities,
     login, register, updateProfile, logout,
-    sendInvitation, handleInvitation, submitEvaluation, createClassroom,
+    sendInvitation, handleInvitation, submitEvaluation, createClassroom: createClassroomData,
     myInvitations, myEvaluations, getStudentRating,
-    initialize, syncFromCloud, syncToCloud, saveToLocal, loadFromLocal,
-    isGistConfigured, hasWritePermission, saveAdminToken, getAdminToken,
+    initialize, syncFromCloud, saveToLocal, loadFromLocal,
+    startAutoSync, stopAutoSync,
+    isSupabaseConfigured,
+    verifyAdmin, isAdminVerified, clearAdminSession
   }
 })

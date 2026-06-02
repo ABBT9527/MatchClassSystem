@@ -93,14 +93,10 @@ const handleRegister = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
-  // 检查是否有写入权限
-  if (!store.hasWritePermission()) {
-    ElMessage.error('未配置管理员 Token，无法注册新用户。请联系管理员。')
-    return
-  }
-
   loading.value = true
   try {
+    // 注册前先拉取最新数据
+    await store.syncFromCloud(true)
     const result = await store.register({
       studentId: form.studentId,
       name: form.name,

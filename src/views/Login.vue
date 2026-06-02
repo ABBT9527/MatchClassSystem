@@ -60,10 +60,13 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
-// 确保数据已初始化
+// 确保数据已初始化（从云端拉取）
 onMounted(async () => {
-  if (!store.isInitialized) {
+  loading.value = true
+  try {
     await store.initialize()
+  } finally {
+    loading.value = false
   }
 })
 
@@ -73,8 +76,12 @@ const handleLogin = async () => {
 
   loading.value = true
   try {
+    // 登录前先拉取最新数据
+    await store.syncFromCloud(true)
     const result = store.login(form.studentId, form.password)
     if (result.success) {
+      // 登录成功后启动定时同步
+      store.startAutoSync(60000)
       ElMessage.success(result.message)
       router.push('/dashboard')
     } else {
