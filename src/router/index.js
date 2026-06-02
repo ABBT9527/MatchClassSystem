@@ -16,6 +16,7 @@ const routes = [
       { path: 'matching', name: 'Matching', component: () => import('../views/Matching.vue') },
       { path: 'classroom', name: 'Classroom', component: () => import('../views/Classroom.vue') },
       { path: 'invitation', name: 'Invitation', component: () => import('../views/Invitation.vue') },
+      { path: 'team', name: 'TeamManage', component: () => import('../views/TeamManage.vue') },
       { path: 'evaluation', name: 'Evaluation', component: () => import('../views/Evaluation.vue') },
       { path: 'database', name: 'Database', component: () => import('../views/Database.vue') },
       { path: 'settings', name: 'Settings', component: () => import('../views/Settings.vue') },

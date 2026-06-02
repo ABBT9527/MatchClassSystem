@@ -33,6 +33,10 @@
           <span>邀请中心</span>
           <el-badge v-if="pendingCount > 0" :value="pendingCount" class="nav-badge" />
         </el-menu-item>
+        <el-menu-item index="/dashboard/team">
+          <el-icon><User /></el-icon>
+          <span>队伍管理</span>
+        </el-menu-item>
         <el-menu-item index="/dashboard/evaluation">
           <el-icon><Star /></el-icon>
           <span>评价系统</span>
@@ -94,6 +98,7 @@ const pageTitle = computed(() => {
     '/dashboard/profile': '个人信息',
     '/dashboard/classroom': '课堂管理',
     '/dashboard/invitation': '邀请中心',
+    '/dashboard/team': '队伍管理',
     '/dashboard/evaluation': '评价系统',
     '/dashboard/database': '信息库',
     '/dashboard/settings': '系统设置',

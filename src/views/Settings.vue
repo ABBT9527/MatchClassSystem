@@ -131,7 +131,7 @@
 
     <div class="footer-info">
       <span>赛博炼丹真君同修会</span>
-      <span>v0.1.8</span>
+      <span>v0.1.9</span>
     </div>
   </div>
 </template>
