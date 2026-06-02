@@ -1,29 +1,69 @@
 <template>
   <div class="settings-page">
-    <!-- 云端存储配置 -->
+    <!-- 云端存储状态 -->
     <el-card shadow="hover">
       <template #header>
         <div class="card-header">
           <span><el-icon><Cloudy /></el-icon> 云端数据存储</span>
-          <el-tag :type="isConfigured ? 'success' : 'info'">
-            {{ isConfigured ? '已配置' : '未配置' }}
+          <el-tag :type="isConfigured ? 'success' : 'warning'">
+            {{ isConfigured ? '已连接' : '未配置 Gist ID' }}
           </el-tag>
         </div>
       </template>
       
+      <el-descriptions :column="1" border style="margin-bottom: 20px">
+        <el-descriptions-item label="Gist ID">
+          <code v-if="gistId">{{ gistId }}</code>
+          <span v-else style="color: #999">未配置（请修改 gistService.js 中的 BUILTIN_GIST_ID）</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="读取权限">
+          <el-tag type="success" v-if="isConfigured">公开只读</el-tag>
+          <el-tag type="danger" v-else>不可用</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="写入权限">
+          <el-tag :type="hasWrite ? 'success' : 'warning'">
+            {{ hasWrite ? '已配置 Token' : '未配置（无法注册/修改数据）' }}
+          </el-tag>
+        </el-descriptions-item>
+      </el-descriptions>
+
       <el-alert
         v-if="!isConfigured"
-        title="配置云端存储后，学生数据将同步到 GitHub Gist，实现多设备数据共享"
+        title="请先配置 Gist ID"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 20px"
+      >
+        <template #default>
+          <p>修改 <code>src/utils/gistService.js</code> 中的 <code>BUILTIN_GIST_ID</code> 为您的 Gist ID</p>
+        </template>
+      </el-alert>
+    </el-card>
+
+    <!-- 管理员 Token 配置 -->
+    <el-card shadow="hover" style="margin-top: 20px">
+      <template #header>
+        <div class="card-header">
+          <span><el-icon><Key /></el-icon> 管理员 Token（写入权限）</span>
+        </div>
+      </template>
+      
+      <el-alert
         type="info"
         :closable="false"
         show-icon
         style="margin-bottom: 20px"
-      />
+      >
+        <template #default>
+          <p>配置管理员 Token 后，可以注册新用户、修改数据并同步到云端</p>
+        </template>
+      </el-alert>
 
-      <el-form :model="gistForm" label-width="140px" style="max-width: 600px">
+      <el-form :model="tokenForm" label-width="120px" style="max-width: 500px">
         <el-form-item label="GitHub Token">
           <el-input
-            v-model="gistForm.token"
+            v-model="tokenForm.token"
             type="password"
             placeholder="ghp_xxxx... (需要 gist 权限)"
             show-password
@@ -32,19 +72,15 @@
             <el-link type="primary" @click="showTokenHelp = true">如何获取 Token？</el-link>
           </div>
         </el-form-item>
-        <el-form-item label="Gist ID">
-          <el-input
-            v-model="gistForm.gistId"
-            placeholder="留空则自动创建新 Gist"
-          />
-          <div class="form-hint">可选：填入已有 Gist ID 以使用现有数据</div>
-        </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="saveConfig" :loading="saving">
-            <el-icon><Check /></el-icon> 保存配置
+          <el-button type="primary" @click="saveToken" :loading="saving">
+            <el-icon><Check /></el-icon> 保存 Token
           </el-button>
-          <el-button @click="testConnection" :loading="testing" :disabled="!gistForm.token">
-            <el-icon><Connection /></el-icon> 测试连接
+          <el-button @click="testToken" :loading="testing" :disabled="!tokenForm.token">
+            <el-icon><Connection /></el-icon> 测试
+          </el-button>
+          <el-button type="danger" @click="clearToken" v-if="hasWrite">
+            <el-icon><Delete /></el-icon> 清除
           </el-button>
         </el-form-item>
       </el-form>
@@ -68,7 +104,7 @@
           </el-button>
         </el-col>
         <el-col :span="12">
-          <el-button type="success" @click="pushToCloud" :loading="store.isCloudSyncing" style="width: 100%">
+          <el-button type="success" @click="pushToCloud" :loading="store.isCloudSyncing" :disabled="!hasWrite" style="width: 100%">
             <el-icon><Upload /></el-icon> 推送到云端
           </el-button>
         </el-col>
@@ -132,82 +168,71 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useAppStore } from '../store'
-import { validateToken, createGist, isGistConfigured } from '../utils/gistService'
-import { ElMessage } from 'element-plus'
+import { validateToken, getBuiltinGistId, hasBuiltinGistId } from '../utils/gistService'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const store = useAppStore()
 
-const gistForm = reactive({
-  token: '',
-  gistId: '',
-})
-
+const tokenForm = reactive({ token: '' })
 const saving = ref(false)
 const testing = ref(false)
 const showTokenHelp = ref(false)
+
+const gistId = ref('')
 const isConfigured = ref(false)
+const hasWrite = ref(false)
 
 onMounted(() => {
-  const config = store.getGistConfig()
-  gistForm.token = config.token || ''
-  gistForm.gistId = config.gistId || ''
-  isConfigured.value = isGistConfigured()
+  gistId.value = getBuiltinGistId()
+  isConfigured.value = hasBuiltinGistId()
+  hasWrite.value = store.hasWritePermission()
+  tokenForm.token = store.getAdminToken() || ''
 })
 
-async function saveConfig() {
-  if (!gistForm.token) {
+async function saveToken() {
+  if (!tokenForm.token) {
     ElMessage.warning('请输入 GitHub Token')
     return
   }
 
   saving.value = true
   try {
-    // 验证 Token
-    const validateResult = await validateToken(gistForm.token)
-    if (!validateResult.success) {
-      ElMessage.error(validateResult.message)
-      return
+    const result = await validateToken(tokenForm.token)
+    if (result.success) {
+      store.saveAdminToken(tokenForm.token)
+      hasWrite.value = true
+      ElMessage.success(`Token 已保存，验证用户: ${result.username}`)
+    } else {
+      ElMessage.error(result.message)
     }
-
-    // 如果没有 Gist ID，创建新的
-    if (!gistForm.gistId) {
-      const createResult = await createGist(gistForm.token, {
-        students: store.students,
-        classrooms: store.classrooms,
-        invitations: store.invitations,
-        evaluations: store.evaluations,
-        teams: store.teams,
-        createdAt: new Date().toISOString()
-      })
-      if (!createResult.success) {
-        ElMessage.error(createResult.message)
-        return
-      }
-      gistForm.gistId = createResult.gistId
-      ElMessage.success(`Gist 已创建，ID: ${createResult.gistId}`)
-    }
-
-    // 保存配置
-    store.saveGistConfig(gistForm.token, gistForm.gistId)
-    isConfigured.value = true
-    ElMessage.success('配置保存成功')
   } finally {
     saving.value = false
   }
 }
 
-async function testConnection() {
+async function testToken() {
   testing.value = true
   try {
-    const result = await validateToken(gistForm.token)
+    const result = await validateToken(tokenForm.token)
     if (result.success) {
-      ElMessage.success(`连接成功！用户: ${result.username}`)
+      ElMessage.success(`Token 有效，用户: ${result.username}`)
     } else {
       ElMessage.error(result.message)
     }
   } finally {
     testing.value = false
   }
+}
+
+function clearToken() {
+  ElMessageBox.confirm('确定要清除管理员 Token 吗？清除后将无法注册新用户或修改数据。', '提示', {
+    type: 'warning'
+  }).then(() => {
+    store.saveAdminToken('')
+    tokenForm.token = ''
+    hasWrite.value = false
+    ElMessage.success('Token 已清除')
+  }).catch(() => {})
 }
 
 async function pullFromCloud() {
@@ -256,5 +281,12 @@ async function pushToCloud() {
   font-size: 12px;
   color: #999;
   font-weight: normal;
+}
+
+code {
+  background: #f5f5f5;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
 }
 </style>

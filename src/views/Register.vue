@@ -93,27 +93,30 @@ const handleRegister = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
+  // 检查是否有写入权限
+  if (!store.hasWritePermission()) {
+    ElMessage.error('未配置管理员 Token，无法注册新用户。请联系管理员。')
+    return
+  }
+
   loading.value = true
-  setTimeout(() => {
-    const result = store.register({
+  try {
+    const result = await store.register({
       studentId: form.studentId,
       name: form.name,
+      password: form.password,
       major: form.major,
       grade: form.grade,
-      skills: [],
-      personality: '',
-      goals: [],
-      bio: '',
-      availableTime: '',
     })
-    loading.value = false
     if (result.success) {
       ElMessage.success(result.message)
-      router.push('/dashboard/profile')
+      router.push('/login')
     } else {
       ElMessage.error(result.message)
     }
-  }, 500)
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 

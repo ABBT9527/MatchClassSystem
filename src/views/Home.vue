@@ -119,13 +119,8 @@ const quickActions = [
   { title: '邀请中心', desc: '发送和接收组队邀请', icon: 'Message', color: 'icon-orange', path: '/dashboard/invitation' },
 ]
 
-const recentActivities = [
-  { time: '2026-05-15', content: '张三 向你发送了组队邀请（Web前端开发实训）', type: 'warning' },
-  { time: '2026-05-14', content: '你接受了 赵六 的组队邀请（软件工程综合实践）', type: 'success' },
-  { time: '2026-05-12', content: '你提交了对 李四 的队友评价', type: 'primary' },
-  { time: '2026-05-10', content: '你加入了"Web前端开发实训"课堂', type: 'primary' },
-  { time: '2026-05-08', content: '系统为你推荐了5位最佳队友', type: 'success' },
-]
+// 从 store 获取最近动态
+const recentActivities = computed(() => store.recentActivities)
 </script>
 
 <style scoped>

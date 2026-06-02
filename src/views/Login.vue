@@ -35,16 +35,12 @@
         <span>还没有账号？</span>
         <router-link to="/register" class="link">去注册</router-link>
       </div>
-      <div class="demo-hint">
-        <el-divider>演示账号</el-divider>
-        <p>任意学号均可登录，新用户自动创建</p>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../store'
 import { ElMessage } from 'element-plus'
@@ -64,21 +60,29 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
+// 确保数据已初始化
+onMounted(async () => {
+  if (!store.isInitialized) {
+    await store.initialize()
+  }
+})
+
 const handleLogin = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
   loading.value = true
-  setTimeout(() => {
+  try {
     const result = store.login(form.studentId, form.password)
-    loading.value = false
     if (result.success) {
       ElMessage.success(result.message)
       router.push('/dashboard')
     } else {
       ElMessage.error(result.message)
     }
-  }, 500)
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
