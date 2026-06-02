@@ -288,18 +288,21 @@ function viewClassroom(classroom) {
   detailDialogVisible.value = true
 }
 
-function joinClassroom(classroom) {
-  if (!classroom.students.includes(store.currentUser?.id)) {
-    classroom.students.push(store.currentUser?.id)
-    ElMessage.success('已加入课堂')
+async function joinClassroom(classroom) {
+  const result = await store.joinClassroom(classroom.id)
+  if (result.success) {
+    ElMessage.success(result.message)
+  } else {
+    ElMessage.error(result.message)
   }
 }
 
-function leaveClassroom(classroom) {
-  const idx = classroom.students.indexOf(store.currentUser?.id)
-  if (idx !== -1) {
-    classroom.students.splice(idx, 1)
-    ElMessage.success('已退出课堂')
+async function leaveClassroom(classroom) {
+  const result = await store.leaveClassroom(classroom.id)
+  if (result.success) {
+    ElMessage.success(result.message)
+  } else {
+    ElMessage.error(result.message)
   }
 }
 

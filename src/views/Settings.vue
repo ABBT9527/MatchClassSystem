@@ -128,6 +128,11 @@
         </el-row>
       </el-card>
     </template>
+
+    <div class="footer-info">
+      <span>赛博炼丹真君同修会</span>
+      <span>v0.1.8</span>
+    </div>
   </div>
 </template>
 
@@ -181,4 +186,5 @@ async function pullFromCloud() {
 .card-header { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
 .card-header .el-icon { margin-right: 6px; vertical-align: middle; }
 .sync-time { font-size: 12px; color: #999; font-weight: normal; }
+.footer-info { display: flex; justify-content: center; gap: 12px; margin-top: 30px; padding-bottom: 20px; color: #c0c4cc; font-size: 12px; }
 </style>

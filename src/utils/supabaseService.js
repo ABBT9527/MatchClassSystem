@@ -138,6 +138,24 @@ export async function createClassroom(classroomData) {
   })
 }
 
+// 更新课堂（用于加入/退出课堂时同步 students 字段）
+export async function updateClassroom(classroomId, classroomData) {
+  const dbData = {}
+  if (classroomData.name !== undefined) dbData.name = classroomData.name
+  if (classroomData.teacher !== undefined) dbData.teacher = classroomData.teacher
+  if (classroomData.description !== undefined) dbData.description = classroomData.description
+  if (classroomData.maxTeamSize !== undefined) dbData.max_team_size = classroomData.maxTeamSize
+  if (classroomData.students !== undefined) dbData.students = classroomData.students
+  if (classroomData.startDate !== undefined) dbData.start_date = classroomData.startDate
+  if (classroomData.endDate !== undefined) dbData.end_date = classroomData.endDate
+  if (classroomData.status !== undefined) dbData.status = classroomData.status
+
+  return await supabaseRequest(`classrooms?id=eq.${classroomId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(dbData)
+  })
+}
+
 // 获取所有邀请
 export async function getInvitations() {
   return await supabaseRequest('invitations?select=*')

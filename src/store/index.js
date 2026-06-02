@@ -6,6 +6,7 @@ import {
   createStudent, 
   updateStudent,
   createClassroom,
+  updateClassroom,
   createInvitation,
   updateInvitation,
   createEvaluation,
@@ -435,6 +436,55 @@ export const useAppStore = defineStore('app', () => {
     return { success: true, message: '已退出队伍' }
   }
 
+  // 加入课堂
+  async function joinClassroom(classroomId) {
+    const idx = classrooms.value.findIndex(c => c.id === classroomId)
+    if (idx === -1) return { success: false, message: '课堂不存在' }
+
+    const classroom = classrooms.value[idx]
+    if (classroom.students.includes(currentUser.value?.id)) {
+      return { success: false, message: '你已在该课堂中' }
+    }
+
+    classroom.students.push(currentUser.value.id)
+    saveToLocal()
+
+    if (isSupabaseConfigured()) {
+      const result = await updateClassroom(classroomId, { students: classroom.students })
+      if (!result.success) {
+        return { success: false, message: `本地已加入，但云端同步失败: ${result.message}` }
+      }
+    }
+
+    updateSyncTime()
+    return { success: true, message: '已加入课堂' }
+  }
+
+  // 退出课堂
+  async function leaveClassroom(classroomId) {
+    const idx = classrooms.value.findIndex(c => c.id === classroomId)
+    if (idx === -1) return { success: false, message: '课堂不存在' }
+
+    const classroom = classrooms.value[idx]
+    const studentIdx = classroom.students.indexOf(currentUser.value?.id)
+    if (studentIdx === -1) {
+      return { success: false, message: '你不在该课堂中' }
+    }
+
+    classroom.students.splice(studentIdx, 1)
+    saveToLocal()
+
+    if (isSupabaseConfigured()) {
+      const result = await updateClassroom(classroomId, { students: classroom.students })
+      if (!result.success) {
+        return { success: false, message: `本地已退出，但云端同步失败: ${result.message}` }
+      }
+    }
+
+    updateSyncTime()
+    return { success: true, message: '已退出课堂' }
+  }
+
   async function submitEvaluation(data) {
     const newEval = {
       id: Math.max(0, ...evaluations.value.map(e => e.id)) + 1,
@@ -524,6 +574,7 @@ export const useAppStore = defineStore('app', () => {
     login, register, updateProfile, logout,
     sendInvitation, handleInvitation, submitEvaluation, createClassroom: createClassroomData,
     createTeam: createTeamData, updateTeam: updateTeamData, joinTeam, leaveTeam,
+    joinClassroom, leaveClassroom,
     myInvitations, myEvaluations, getStudentRating,
     initialize, syncFromCloud, saveToLocal, loadFromLocal,
     startAutoSync, stopAutoSync,
