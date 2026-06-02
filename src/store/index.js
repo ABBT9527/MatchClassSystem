@@ -10,6 +10,7 @@ import {
   updateInvitation,
   createEvaluation,
   createTeam,
+  updateTeam,
   isSupabaseConfigured,
   verifyAdmin,
   isAdminVerified,
@@ -235,14 +236,179 @@ export const useAppStore = defineStore('app', () => {
 
   async function handleInvitation(invitationId, accept) {
     const idx = invitations.value.findIndex(i => i.id === invitationId)
-    if (idx !== -1) {
-      invitations.value[idx].status = accept ? 'accepted' : 'rejected'
+    if (idx === -1) return { success: false, message: '邀请不存在' }
+    
+    const invitation = invitations.value[idx]
+    
+    if (accept) {
+      // 接受邀请：更新邀请状态并创建/加入队伍
+      invitations.value[idx].status = 'accepted'
+      
+      // 查找是否已有队伍
+      const existingTeam = teams.value.find(t => 
+        t.classroomId === invitation.classroomId && 
+        (t.members.includes(invitation.from) || t.members.includes(invitation.to))
+      )
+      
+      if (existingTeam) {
+        // 加入已有队伍
+        if (!existingTeam.members.includes(invitation.to)) {
+          existingTeam.members.push(invitation.to)
+        }
+        if (!existingTeam.members.includes(invitation.from)) {
+          existingTeam.members.push(invitation.from)
+        }
+        
+        // 同步到云端
+        if (isSupabaseConfigured()) {
+          await updateTeam(existingTeam.id, { members: existingTeam.members })
+        }
+      } else {
+        // 创建新队伍
+        const fromStudent = students.value.find(s => s.id === invitation.from)
+        const toStudent = students.value.find(s => s.id === invitation.to)
+        const teamName = `${fromStudent?.name || '队员'} & ${toStudent?.name || '队员'}的队伍`
+        
+        const newTeam = {
+          id: Math.max(0, ...teams.value.map(t => t.id)) + 1,
+          name: teamName,
+          classroomId: invitation.classroomId,
+          members: [invitation.from, invitation.to],
+          leader: invitation.from, // 邀请发起者为队长
+          slogan: '',
+          description: '',
+          maxSize: 5,
+          status: 'active',
+          createdAt: new Date().toLocaleString('zh-CN'),
+        }
+        
+        if (isSupabaseConfigured()) {
+          const result = await createTeam(newTeam)
+          if (result.success && result.data && result.data[0]) {
+            newTeam.id = result.data[0].id
+          }
+        }
+        
+        teams.value.push(newTeam)
+      }
+      
       saveToLocal()
       
       if (isSupabaseConfigured()) {
-        await updateInvitation(invitationId, invitations.value[idx].status)
+        await updateInvitation(invitationId, 'accepted')
+      }
+      
+      return { success: true, message: '已接受邀请并加入队伍' }
+    } else {
+      // 拒绝邀请
+      invitations.value[idx].status = 'rejected'
+      saveToLocal()
+      
+      if (isSupabaseConfigured()) {
+        await updateInvitation(invitationId, 'rejected')
+      }
+      
+      return { success: true, message: '已拒绝邀请' }
+    }
+  }
+
+  // 创建队伍
+  async function createTeamData(teamData) {
+    const newTeam = {
+      id: Math.max(0, ...teams.value.map(t => t.id)) + 1,
+      name: teamData.name,
+      classroomId: teamData.classroomId,
+      members: teamData.members || [currentUser.value?.id],
+      leader: teamData.leader || currentUser.value?.id,
+      slogan: teamData.slogan || '',
+      description: teamData.description || '',
+      maxSize: teamData.maxSize || 5,
+      status: 'active',
+      createdAt: new Date().toLocaleString('zh-CN'),
+    }
+    
+    if (isSupabaseConfigured()) {
+      const result = await createTeam(newTeam)
+      if (result.success && result.data && result.data[0]) {
+        newTeam.id = result.data[0].id
       }
     }
+    
+    teams.value.push(newTeam)
+    saveToLocal()
+    return { success: true, message: '队伍创建成功', data: newTeam }
+  }
+
+  // 更新队伍
+  async function updateTeamData(teamId, teamData) {
+    const idx = teams.value.findIndex(t => t.id === teamId)
+    if (idx === -1) return { success: false, message: '队伍不存在' }
+    
+    teams.value[idx] = { ...teams.value[idx], ...teamData }
+    saveToLocal()
+    
+    if (isSupabaseConfigured()) {
+      const result = await updateTeam(teamId, teamData)
+      if (!result.success) {
+        return { success: false, message: `本地已更新，但云端同步失败: ${result.message}` }
+      }
+    }
+    
+    return { success: true, message: '队伍信息已更新' }
+  }
+
+  // 加入队伍
+  async function joinTeam(teamId) {
+    const idx = teams.value.findIndex(t => t.id === teamId)
+    if (idx === -1) return { success: false, message: '队伍不存在' }
+    
+    const team = teams.value[idx]
+    if (team.members.includes(currentUser.value?.id)) {
+      return { success: false, message: '你已经在队伍中' }
+    }
+    if (team.members.length >= team.maxSize) {
+      return { success: false, message: '队伍已满' }
+    }
+    
+    team.members.push(currentUser.value.id)
+    saveToLocal()
+    
+    if (isSupabaseConfigured()) {
+      await updateTeam(teamId, { members: team.members })
+    }
+    
+    return { success: true, message: '已加入队伍' }
+  }
+
+  // 退出队伍
+  async function leaveTeam(teamId) {
+    const idx = teams.value.findIndex(t => t.id === teamId)
+    if (idx === -1) return { success: false, message: '队伍不存在' }
+    
+    const team = teams.value[idx]
+    const memberIdx = team.members.indexOf(currentUser.value?.id)
+    if (memberIdx === -1) {
+      return { success: false, message: '你不在该队伍中' }
+    }
+    
+    team.members.splice(memberIdx, 1)
+    
+    // 如果队伍空了，标记为解散
+    if (team.members.length === 0) {
+      team.status = 'disbanded'
+    }
+    // 如果队长退出，转让队长
+    else if (team.leader === currentUser.value?.id) {
+      team.leader = team.members[0]
+    }
+    
+    saveToLocal()
+    
+    if (isSupabaseConfigured()) {
+      await updateTeam(teamId, { members: team.members, leader: team.leader, status: team.status })
+    }
+    
+    return { success: true, message: '已退出队伍' }
   }
 
   async function submitEvaluation(data) {
@@ -333,6 +499,7 @@ export const useAppStore = defineStore('app', () => {
     isCloudSyncing, isInitialized, lastSyncTime, recentActivities,
     login, register, updateProfile, logout,
     sendInvitation, handleInvitation, submitEvaluation, createClassroom: createClassroomData,
+    createTeam: createTeamData, updateTeam: updateTeamData, joinTeam, leaveTeam,
     myInvitations, myEvaluations, getStudentRating,
     initialize, syncFromCloud, saveToLocal, loadFromLocal,
     startAutoSync, stopAutoSync,

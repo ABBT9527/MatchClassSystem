@@ -103,8 +103,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="sendDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSend">发送邀请</el-button>
+        <el-button @click="sendDialogVisible = false" :disabled="sendLoading">取消</el-button>
+        <el-button type="primary" @click="confirmSend" :loading="sendLoading">发送邀请</el-button>
       </template>
     </el-dialog>
   </div>
@@ -118,6 +118,7 @@ import { ElMessage } from 'element-plus'
 const store = useAppStore()
 const activeTab = ref('received')
 const sendDialogVisible = ref(false)
+const sendLoading = ref(false) // 发送邀请的loading状态，防止重复点击
 
 const sendForm = reactive({
   toId: null,
@@ -151,9 +152,13 @@ function getClassroomName(id) {
   return c ? c.name : '未知课堂'
 }
 
-function handleInvitation(invitationId, accept) {
-  store.handleInvitation(invitationId, accept)
-  ElMessage.success(accept ? '已接受邀请' : '已拒绝邀请')
+async function handleInvitation(invitationId, accept) {
+  const result = await store.handleInvitation(invitationId, accept)
+  if (result.success) {
+    ElMessage.success(result.message)
+  } else {
+    ElMessage.error(result.message)
+  }
 }
 
 function showSendDialog() {
@@ -163,7 +168,9 @@ function showSendDialog() {
   sendDialogVisible.value = true
 }
 
-function confirmSend() {
+async function confirmSend() {
+  if (sendLoading.value) return // 防止重复点击
+  
   if (!sendForm.toId) {
     ElMessage.warning('请选择邀请对象')
     return
@@ -172,10 +179,25 @@ function confirmSend() {
     ElMessage.warning('请选择目标课堂')
     return
   }
-  const result = store.sendInvitation(sendForm.toId, sendForm.classroomId, sendForm.message)
-  if (result.success) {
-    ElMessage.success(result.message)
-    sendDialogVisible.value = false
+  
+  sendLoading.value = true
+  try {
+    const result = await store.sendInvitation(sendForm.toId, sendForm.classroomId, sendForm.message)
+    if (result.success) {
+      ElMessage.success(result.message)
+      sendDialogVisible.value = false // 关闭对话框
+      // 重置表单
+      sendForm.toId = null
+      sendForm.classroomId = null
+      sendForm.message = ''
+    } else {
+      ElMessage.error(result.message || '发送失败')
+    }
+  } catch (error) {
+    ElMessage.error('发送邀请时发生错误')
+    console.error('发送邀请错误:', error)
+  } finally {
+    sendLoading.value = false
   }
 }
 </script>

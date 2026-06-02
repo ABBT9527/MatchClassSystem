@@ -203,8 +203,30 @@ export async function createTeam(teamData) {
       classroom_id: teamData.classroomId,
       members: teamData.members || [],
       leader_id: teamData.leader,
+      slogan: teamData.slogan || '', // 队伍口号（可选）
+      description: teamData.description || '', // 队伍描述（可选）
+      max_size: teamData.maxSize || 5, // 队伍最大人数
+      status: teamData.status || 'active', // 队伍状态
       created_at: teamData.createdAt || new Date().toISOString()
     })
+  })
+}
+
+// 更新队伍
+export async function updateTeam(teamId, teamData) {
+  const dbData = {}
+  if (teamData.name !== undefined) dbData.name = teamData.name
+  if (teamData.classroomId !== undefined) dbData.classroom_id = teamData.classroomId
+  if (teamData.members !== undefined) dbData.members = teamData.members
+  if (teamData.leader !== undefined) dbData.leader_id = teamData.leader
+  if (teamData.slogan !== undefined) dbData.slogan = teamData.slogan
+  if (teamData.description !== undefined) dbData.description = teamData.description
+  if (teamData.maxSize !== undefined) dbData.max_size = teamData.maxSize
+  if (teamData.status !== undefined) dbData.status = teamData.status
+  
+  return await supabaseRequest(`teams?id=eq.${teamId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(dbData)
   })
 }
 
@@ -278,6 +300,10 @@ export async function syncAllData() {
       classroomId: t.classroom_id,
       members: t.members || [],
       leader: t.leader_id,
+      slogan: t.slogan || '', // 队伍口号
+      description: t.description || '', // 队伍描述
+      maxSize: t.max_size || 5, // 队伍最大人数
+      status: t.status || 'active', // 队伍状态
       createdAt: t.created_at
     })) || []
   }
