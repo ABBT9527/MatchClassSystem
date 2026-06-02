@@ -120,6 +120,10 @@
                 <span class="detail-label">目标一致</span>
                 <el-progress :percentage="result.score.goal" :stroke-width="8" :color="'#f093fb'" :show-text="true" style="flex:1" />
               </div>
+              <div class="detail-row">
+                <span class="detail-label">评分相似</span>
+                <el-progress :percentage="result.score.scoreSimilarity || 50" :stroke-width="8" :color="'#4facfe'" :show-text="true" style="flex:1" />
+              </div>
             </div>
             <el-divider />
             <div class="match-skills">

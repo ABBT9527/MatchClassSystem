@@ -140,19 +140,28 @@ function getAvgRating(evalItem) {
   return ((evalItem.teamwork + evalItem.communication + evalItem.technical + evalItem.responsibility) / 4).toFixed(1)
 }
 
-function saveProfile() {
+async function saveProfile() {
   saving.value = true
-  setTimeout(() => {
-    store.updateProfile({
+  try {
+    const result = await store.updateProfile({
       bio: form.bio,
       availableTime: form.availableTime,
       skills: form.skills,
       personality: form.personality,
       goals: form.goals,
     })
+    if (result && result.success) {
+      ElMessage.success(result.message)
+    } else if (result) {
+      ElMessage.warning(result.message)
+    } else {
+      ElMessage.success('个人信息已保存')
+    }
+  } catch (error) {
+    ElMessage.error('保存失败: ' + error.message)
+  } finally {
     saving.value = false
-    ElMessage.success('个人信息已保存')
-  }, 500)
+  }
 }
 
 function resetForm() {

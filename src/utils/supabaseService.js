@@ -94,11 +94,25 @@ export async function createStudent(studentData) {
   })
 }
 
-// 更新学生
+// 更新学生（需要转换字段名）
 export async function updateStudent(studentId, data) {
+  // 转换前端字段名到数据库字段名
+  const dbData = {}
+  if (data.name !== undefined) dbData.name = data.name
+  if (data.password !== undefined) dbData.password = data.password
+  if (data.major !== undefined) dbData.major = data.major
+  if (data.grade !== undefined) dbData.grade = data.grade
+  if (data.skills !== undefined) dbData.skills = data.skills
+  if (data.personality !== undefined) dbData.personality = data.personality
+  if (data.goals !== undefined) dbData.goals = data.goals
+  if (data.avatar !== undefined) dbData.avatar = data.avatar
+  if (data.bio !== undefined) dbData.bio = data.bio
+  if (data.availableTime !== undefined) dbData.available_time = data.availableTime
+  if (data.score !== undefined) dbData.score = data.score
+  
   return await supabaseRequest(`students?student_id=eq.${studentId}`, {
     method: 'PATCH',
-    body: JSON.stringify(data)
+    body: JSON.stringify(dbData)
   })
 }
 

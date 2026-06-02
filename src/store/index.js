@@ -181,19 +181,27 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function updateProfile(data) {
-    if (!currentUser.value) return
+    if (!currentUser.value) return { success: false, message: '未登录' }
     const idx = students.value.findIndex(s => s.id === currentUser.value.id)
-    if (idx !== -1) {
-      students.value[idx] = { ...students.value[idx], ...data }
-      currentUser.value = students.value[idx]
-      localStorage.setItem('currentUser', JSON.stringify(currentUser.value))
-      saveToLocal()
-      
-      // 同步到 Supabase
-      if (isSupabaseConfigured()) {
-        await updateStudent(currentUser.value.studentId, data)
+    if (idx === -1) return { success: false, message: '用户不存在' }
+    
+    // 更新本地数据
+    students.value[idx] = { ...students.value[idx], ...data }
+    currentUser.value = students.value[idx]
+    localStorage.setItem('currentUser', JSON.stringify(currentUser.value))
+    saveToLocal()
+    
+    // 同步到 Supabase
+    if (isSupabaseConfigured()) {
+      const result = await updateStudent(currentUser.value.studentId, data)
+      if (!result.success) {
+        console.error('同步到云端失败:', result.message)
+        return { success: false, message: `本地已更新，但云端同步失败: ${result.message}` }
       }
+      return { success: true, message: '个人信息已更新并同步到云端' }
     }
+    
+    return { success: true, message: '个人信息已更新' }
   }
 
   function logout() {
