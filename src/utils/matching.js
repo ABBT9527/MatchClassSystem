@@ -142,17 +142,49 @@ export function findBestMatches(student, allStudents, topN = 5) {
 }
 
 /**
+ * 检查学生是否已在某班级的队伍中
+ * @param {Object} student - 学生信息
+ * @param {number} classroomId - 班级ID
+ * @param {Array} teams - 所有队伍列表
+ * @returns {boolean} - 是否已在队伍中
+ */
+function isStudentInTeam(studentId, classroomId, teams) {
+  return teams.some(team => 
+    team.classroomId === classroomId && 
+    team.members.includes(studentId) &&
+    team.status === 'active'
+  )
+}
+
+/**
  * 自动组队 - 将学生分成最优队伍（贪心算法）
- * @param {Array} students - 待分组的学生列表
+ * 改进版：只配对同班且未组队的学生，剩余学生分配到最合适的队伍
+ * @param {Array} students - 待分组的学生列表（已筛选为同班学生）
  * @param {number} teamSize - 每队人数
+ * @param {number} classroomId - 班级ID
+ * @param {Array} existingTeams - 已存在的队伍列表
  * @returns {Array} - 分组结果
  */
-export function autoTeamFormation(students, teamSize = 4) {
+export function autoTeamFormation(students, teamSize = 4, classroomId = null, existingTeams = []) {
   if (students.length === 0) return []
 
-  const teams = []
-  const remaining = [...students]
+  // 筛选出未组队的学生
+  const ungroupedStudents = classroomId 
+    ? students.filter(s => !isStudentInTeam(s.id, classroomId, existingTeams))
+    : [...students]
 
+  if (ungroupedStudents.length === 0) {
+    return existingTeams.map(team => ({
+      members: team.members.map(memberId => students.find(s => s.id === memberId)).filter(Boolean),
+      avgScore: calculateTeamAvgScore(team.members.map(memberId => students.find(s => s.id === memberId)).filter(Boolean)),
+      isExisting: true
+    }))
+  }
+
+  const teams = []
+  const remaining = [...ungroupedStudents]
+
+  // 先组成完整的队伍
   while (remaining.length >= teamSize) {
     // 选择第一个未分组的学生作为种子
     const seed = remaining.shift()
@@ -179,14 +211,76 @@ export function autoTeamFormation(students, teamSize = 4) {
     teams.push({
       members: team,
       avgScore,
+      isNew: true
     })
   }
 
-  // 处理剩余学生（不足一队）
+  // 处理剩余学生（不足一队）- 将他们分配到最合适的已有队伍
   if (remaining.length > 0) {
-    teams.push({
-      members: remaining,
-      avgScore: remaining.length > 1 ? calculateTeamAvgScore(remaining) : 0,
+    // 合并新创建的队伍和已有队伍
+    const allTeams = [...teams]
+    
+    // 将已有队伍也加入考虑
+    if (existingTeams && existingTeams.length > 0) {
+      existingTeams.forEach(existingTeam => {
+        if (existingTeam.classroomId === classroomId && existingTeam.status === 'active') {
+          const teamMembers = existingTeam.members
+            .map(memberId => students.find(s => s.id === memberId))
+            .filter(Boolean)
+          
+          // 检查队伍是否还有空位
+          if (teamMembers.length < (existingTeam.maxSize || 5)) {
+            allTeams.push({
+              members: teamMembers,
+              avgScore: calculateTeamAvgScore(teamMembers),
+              isExisting: true,
+              teamId: existingTeam.id,
+              maxSize: existingTeam.maxSize || 5
+            })
+          }
+        }
+      })
+    }
+
+    // 为每个剩余学生找到最合适的队伍
+    remaining.forEach(student => {
+      let bestTeam = null
+      let bestScore = -1
+
+      // 遍历所有队伍，找到匹配度最高的
+      allTeams.forEach(team => {
+        // 检查队伍是否已满
+        const currentSize = team.members.length
+        const maxSize = team.maxSize || 5
+        
+        if (currentSize < maxSize) {
+          // 计算该学生与队伍中所有成员的匹配度平均值
+          let totalMatchScore = 0
+          team.members.forEach(member => {
+            totalMatchScore += calculateMatchScore(student, member).total
+          })
+          const avgMatchScore = team.members.length > 0 ? totalMatchScore / team.members.length : 0
+
+          if (avgMatchScore > bestScore) {
+            bestScore = avgMatchScore
+            bestTeam = team
+          }
+        }
+      })
+
+      // 将学生加入最合适的队伍
+      if (bestTeam) {
+        bestTeam.members.push(student)
+        bestTeam.avgScore = calculateTeamAvgScore(bestTeam.members)
+      } else {
+        // 如果没有合适的队伍，创建一个新队伍（人数不足）
+        teams.push({
+          members: [student],
+          avgScore: 0,
+          isNew: true,
+          isIncomplete: true
+        })
+      }
     })
   }
 

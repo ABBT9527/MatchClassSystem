@@ -358,19 +358,28 @@ function startAutoTeam() {
     return
   }
 
-  const classroomStudents = filter.classroomId
-    ? store.students.filter(s => {
-        const classroom = store.classrooms.find(c => c.id === filter.classroomId)
-        return classroom?.students.includes(s.id)
-      })
-    : store.students
+  if (!filter.classroomId) {
+    ElMessage.warning('请先选择目标课堂')
+    return
+  }
+
+  const classroomStudents = store.students.filter(s => {
+    const classroom = store.classrooms.find(c => c.id === filter.classroomId)
+    return classroom?.students.includes(s.id)
+  })
 
   if (classroomStudents.length < 2) {
     ElMessage.warning('课堂学生数量不足，无法分组')
     return
   }
 
-  autoTeamResults.value = autoTeamFormation(classroomStudents, autoTeamSize.value)
+  // 传递班级ID和已有队伍信息，以便筛选未组队学生并处理剩余学生
+  autoTeamResults.value = autoTeamFormation(
+    classroomStudents,
+    autoTeamSize.value,
+    filter.classroomId,
+    store.teams
+  )
   ElMessage.success('自动分组完成')
 }
 

@@ -314,6 +314,25 @@ export const useAppStore = defineStore('app', () => {
 
   // 创建队伍
   async function createTeamData(teamData) {
+    // 检查用户是否已加入该班级
+    const classroom = classrooms.value.find(c => c.id === teamData.classroomId)
+    if (!classroom) {
+      return { success: false, message: '班级不存在' }
+    }
+    if (!classroom.students.includes(currentUser.value?.id)) {
+      return { success: false, message: '请先加入该班级才能创建队伍' }
+    }
+    
+    // 检查用户是否已在该班级有队伍
+    const existingTeam = teams.value.find(t => 
+      t.classroomId === teamData.classroomId && 
+      t.members.includes(currentUser.value?.id) &&
+      t.status === 'active'
+    )
+    if (existingTeam) {
+      return { success: false, message: '你已经在该班级有队伍了，请先退出当前队伍' }
+    }
+    
     const newTeam = {
       id: Math.max(0, ...teams.value.map(t => t.id)) + 1,
       name: teamData.name,
@@ -327,15 +346,19 @@ export const useAppStore = defineStore('app', () => {
       createdAt: new Date().toLocaleString('zh-CN'),
     }
     
+    // 先同步到云端，确保数据不丢失
     if (isSupabaseConfigured()) {
       const result = await createTeam(newTeam)
       if (result.success && result.data && result.data[0]) {
         newTeam.id = result.data[0].id
+      } else if (!result.success) {
+        return { success: false, message: `创建队伍失败: ${result.message}` }
       }
     }
     
     teams.value.push(newTeam)
     saveToLocal()
+    updateSyncTime()
     return { success: true, message: '队伍创建成功', data: newTeam }
   }
 
