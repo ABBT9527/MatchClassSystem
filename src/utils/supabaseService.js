@@ -206,7 +206,6 @@ export async function createTeam(teamData) {
       slogan: teamData.slogan || '', // 队伍口号（可选）
       description: teamData.description || '', // 队伍描述（可选）
       max_size: teamData.maxSize || 5, // 队伍最大人数
-      status: teamData.status || 'active', // 队伍状态
       created_at: teamData.createdAt || new Date().toISOString()
     })
   })
@@ -222,7 +221,7 @@ export async function updateTeam(teamId, teamData) {
   if (teamData.slogan !== undefined) dbData.slogan = teamData.slogan
   if (teamData.description !== undefined) dbData.description = teamData.description
   if (teamData.maxSize !== undefined) dbData.max_size = teamData.maxSize
-  if (teamData.status !== undefined) dbData.status = teamData.status
+  // status 字段仅本地使用，不同步到云端
   
   return await supabaseRequest(`teams?id=eq.${teamId}`, {
     method: 'PATCH',
@@ -303,7 +302,7 @@ export async function syncAllData() {
       slogan: t.slogan || '', // 队伍口号
       description: t.description || '', // 队伍描述
       maxSize: t.max_size || 5, // 队伍最大人数
-      status: t.status || 'active', // 队伍状态
+      status: 'active', // 队伍状态（仅本地使用，云端无此字段）
       createdAt: t.created_at
     })) || []
   }

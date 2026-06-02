@@ -428,7 +428,8 @@ export const useAppStore = defineStore('app', () => {
     saveToLocal()
     
     if (isSupabaseConfigured()) {
-      await updateTeam(teamId, { members: team.members, leader: team.leader, status: team.status })
+      // status 仅本地使用，不同步到云端
+      await updateTeam(teamId, { members: team.members, leader: team.leader })
     }
     
     return { success: true, message: '已退出队伍' }
